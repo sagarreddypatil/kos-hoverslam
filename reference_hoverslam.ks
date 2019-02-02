@@ -25,5 +25,4 @@ UNTIL ship:verticalspeed>-0.05{
         unlock steering.
     }
 }
-unlock throttle.
-unlock steering.
+unlock all.
