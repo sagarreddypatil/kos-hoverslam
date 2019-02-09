@@ -34,18 +34,16 @@ lock distTarget to sqrt((lat1-lat2)^2+(long1-long2)^2).
 lock latError to 0 - (impactPos:LAT - landTarget:LAT).
 lock lngError to 0 - (impactPos:LNG - landTarget:LNG).
 
+lock latErrorPow to 0 - (impactPos:LAT - landTarget:LAT).
+lock lngErrorPow to 0 - (impactPos:LNG - landTarget:LNG).
+
 
 set pidLat to PIDLOOP(2, 1, 5, -1, 1).
 set pidLng to PIDLOOP(3, 1, 8, -1, 1).
 set pidLat:SETPOINT to 0.
 set pidLng:SETPOINT to 0.
 
-set pidLatPow to PIDLOOP(2, 1, 5, -1, 1).
-set pidLngPow to PIDLOOP(3, 1, 8, -1, 1).
-set pidLatPow:SETPOINT to 0.
-set pidLngPow:SETPOINT to 0.
-
-wait until ETA:APOAPSIS < 15.
+//wait until ETA:APOAPSIS < 15.
 
 rcs on.
 sas off.
@@ -56,29 +54,30 @@ set steer to srfprograde.
 lock steering to steer.
 lock throttle to thrott.
 
-set randomCondition to true.
 
 until runMode = 0{
     if runMode = 1{
-        //Boostback
         set steer to up + r(0, 65, 180).
-        if randomCondition{ wait 1. }
-        set randomCondition to false.
+        wait 25.
+        set runMode to 2.
+    }
+    if runMode = 2{
+        //Boostback
         set thrott to 0.8.
-        if long1 < long2{
-            set runMode to 2.
+        if long1 < long2 - 0.05{
+            set runMode to 3.
             //unlock steering.
             set thrott to 0.
         }
     }
-    else if runMode = 2{
+    else if runMode = 3{
         set steer to up.
         set thrott to 0.
-        if trueRadar < 30000{
-            set runMode to 3.
+        if trueRadar < 40000{
+            set runMode to 4.
         }
     }
-    else if runMode = 3{
+    else if runMode = 4{
         //Coasting with guidance
         brakes on.
         set pred to r(pidLat:update(time:seconds, latError)*-45, pidLng:update(time:seconds, lngError)*-45, 180).
@@ -86,14 +85,26 @@ until runMode = 0{
         set steer to up + pred.
         print (pred) at (10, 6).
         if (trueRadar < stopDist) and (alt:radar < 6000){
-            set runMode to 4.
+            set runMode to 5.
         }
     }
-    else if runMode = 4{
+    else if runMode = 5{
         //final landing
         set impactpos to landtarget.
         set thrott to idealThrottle.
-        set steer to srfretrograde + r(pidLatPow:update(time:seconds, latError)*22.5, pidLngPow:update(time:seconds, lngError)*22.5, 180).
+        set pred to r(pidLat:update(time:seconds, latError)*-45, pidLng:update(time:seconds, lngError)*-45, 180).
+        set steer to up + pred.
+        print pred at (10, 6).
+        if ship:verticalspeed > -200{
+            set runMode to 6.
+        }
+    }
+    else if runMode = 6{
+        //final landing
+        set impactpos to landtarget.
+        set thrott to idealThrottle.
+        set pred to r(pidLat:update(time:seconds, latError)*30, pidLng:update(time:seconds, lngError)*30, 180).
+        set steer to srfretrograde.
         if ship:verticalspeed > -0.05{
             set thrott to 0.
             //unlock steering.
