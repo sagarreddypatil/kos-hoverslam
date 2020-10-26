@@ -1,6 +1,6 @@
 clearscreen.
 
-set radarOffset to 38.
+set radarOffset to 30.
 lock trueRadar to alt:radar - radarOffset.			// Offset radar to get distance from gear to ground
 lock g to constant:g * body:mass / body:radius^2.		// Gravity (m/s^2)
 lock maxDecel to (ship:availablethrust / ship:mass) - g.	// Maximum deceleration possible (m/s^2)
@@ -9,9 +9,7 @@ lock idealThrottle to stopDist / trueRadar.			// Throttle required for perfect h
 lock impactTime to trueRadar / abs(ship:verticalspeed).		// Time until impact, used for landing gear
 set runMode to 1.
 
-set target to vessel("Drone Ship RTLS").
-
-set landTarget to target:geoposition.
+set landTarget to ship:geoposition.
 wait until ag9.
 
 rcs on.
@@ -102,7 +100,7 @@ until runMode = 0{
         //Coasting with guidance
         set impactPos to addons:tr:impactpos.
         brakes on.
-        set pred to r(pidLat:update(time:seconds, latError)*-30, pidLng:update(time:seconds, lngError)*-30, 180).
+        set pred to r(pidLat:update(time:seconds, latError)*-60, pidLng:update(time:seconds, lngError)*-60, 180).
         set steer to up + pred.
         if (trueRadar < stopDist) and (alt:radar < 10000){
             set runMode to 5.
@@ -114,7 +112,7 @@ until runMode = 0{
         set impactpos to addons:tr:impactpos.
         set thrott to idealThrottle.
         set percentIncrease to 1.
-        set pred to r(pidLat:update(time:seconds, latError * percentIncrease)*-30, pidLng:update(time:seconds, lngError * percentIncrease)*-30, 180).
+        set pred to r(pidLat:update(time:seconds, latError * percentIncrease)*-15, pidLng:update(time:seconds, lngError * percentIncrease)*-15, 180).
         set steer to up + pred.
         if trueRadar < 500{
             set runMode to 6.
@@ -127,7 +125,7 @@ until runMode = 0{
         set steer to srfretrograde.
         if ship:verticalspeed > -0.05{
             set thrott to 0.
-            //unlock steering.
+            unlock steering.
             set runMode to 0.
         }
         if impactTime < 3{
@@ -147,4 +145,4 @@ until runMode = 0{
 }
 
 sas on.
-set sasMode to "RadialOut".
+set sasMode to "RADIALOUT".
