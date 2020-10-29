@@ -8,9 +8,7 @@ lock stopDist to ship:verticalspeed^2 / (2 * maxDecel).		// The distance the bur
 lock idealThrottle to stopDist / trueRadar.			// Throttle required for perfect hoverslam
 lock impactTime to trueRadar / abs(ship:verticalspeed).		// Time until impact, used for landing gear
 set runMode to 1.
-
-set landTarget to latlng(-0.0972080471037579,-74.5576707671538).
-wait until ag9.
+set landTarget to latlng(-0.10266804865356,-74.575385655446).
 
 if ADDONS:TR:AVAILABLE {
     if ADDONS:TR:HASIMPACT {
@@ -24,7 +22,7 @@ if ADDONS:TR:AVAILABLE {
     set runMode to 0.
 }
 
-set impactPos to addons:tr:impactpos.
+lock impactPos to addons:tr:impactpos.
 lock lat1 to impactPos:lat.
 lock long1 to impactPos:lng.
 lock lat2 to landTarget:lat.
@@ -36,9 +34,12 @@ lock distTarget to sqrt((lat1-lat2)^2+(long1-long2)^2).
 lock latError to 0 - (impactPos:LAT - landTarget:LAT).
 lock lngError to 0 - (impactPos:LNG - landTarget:LNG).
 
+lock latErrorPow to 0 - (impactPos:LAT - landTarget:LAT).
+lock lngErrorPow to 0 - (impactPos:LNG - landTarget:LNG).
 
-set pidLat to PIDLOOP(15, 4, 0, -1, 1).
-set pidLng to PIDLOOP(10, 4, 3, -1, 1).
+
+set pidLat to PIDLOOP(2, 1, 5, -1, 1).
+set pidLng to PIDLOOP(3, 1, 8, -1, 1).
 set pidLat:SETPOINT to 0.
 set pidLng:SETPOINT to 0.
 
@@ -48,33 +49,28 @@ rcs on.
 sas off.
 
 set thrott to 0.
-set steer to srfRetrograde.
+set steer to srfprograde.
 
 lock steering to steer.
 lock throttle to thrott.
 
-set startTime to time:seconds.
+
 until runMode = 0{
     if runMode = 1{
-        set impactPos to addons:tr:impactpos.
-        set steer to up + HEADING(270, 10).
-        if time:seconds - startTime > 10{
-            set runMode to 2.
-        }
+        set steer to up + r(0, 65, 180).
+        wait 25.
+        set runMode to 2.
     }
     if runMode = 2{
-        set impactPos to addons:tr:impactpos.
         //Boostback
-        set thrott to 1.0.
-        set steer to up + HEADING(270, 10).
-        if long1 < long2{
+        set thrott to 0.8.
+        if long1 < long2 - 0.05{
             set runMode to 3.
             //unlock steering.
             set thrott to 0.
         }
     }
     else if runMode = 3{
-        set impactPos to addons:tr:impactpos.
         set steer to up.
         set thrott to 0.
         if trueRadar < 40000{
@@ -82,34 +78,32 @@ until runMode = 0{
         }
     }
     else if runMode = 4{
-        set impactPos to addons:tr:impactpos.
         //Coasting with guidance
         brakes on.
         set pred to r(pidLat:update(time:seconds, latError)*-45, pidLng:update(time:seconds, lngError)*-45, 180).
         //set pred to r(0, pidLng:update(time:seconds, lngError)*-45, 180).
         set steer to up + pred.
         print (pred) at (10, 6).
-        if (trueRadar < stopDist) and (alt:radar < 10000){
+        if (trueRadar < stopDist) and (alt:radar < 6000){
             set runMode to 5.
         }
     }
     else if runMode = 5{
         //final landing
-        set impactpos to addons:tr:impactpos.
+        set impactpos to landtarget.
         set thrott to idealThrottle.
-        set percentIncrease to max(2, (6000/trueRadar)).
-        print percentIncrease at (10, 9).
-        set pred to r(pidLat:update(time:seconds, latError * percentIncrease)*-45, pidLng:update(time:seconds, lngError * percentIncrease)*-45, 180).
-        set steer to srfRetrograde + pred.
+        set pred to r(pidLat:update(time:seconds, latError)*-45, pidLng:update(time:seconds, lngError)*-45, 180).
+        set steer to up + pred.
         print pred at (10, 6).
-        if trueRadar < 500{
+        if ship:verticalspeed > -200{
             set runMode to 6.
         }
     }
     else if runMode = 6{
         //final landing
-        set impactpos to ship:geoposition.
+        set impactpos to landtarget.
         set thrott to idealThrottle.
+        set pred to r(pidLat:update(time:seconds, latError)*30, pidLng:update(time:seconds, lngError)*30, 180).
         set steer to srfretrograde.
         if ship:verticalspeed > -0.05{
             set thrott to 0.
@@ -122,8 +116,6 @@ until runMode = 0{
     }
     print (trueRadar - stopDist) at (10, 4).
     print (distTarget) at (10, 5).
-    print (ship:verticalspeed) at (10, 8).
-    print (runmode) at (10, 10).
 }
 unlock all.
 sas on.
