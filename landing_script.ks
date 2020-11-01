@@ -7,104 +7,143 @@ lock maxDecel to (ship:availablethrust / ship:mass) - g.	// Maximum deceleration
 lock stopDist to ship:verticalspeed^2 / (2 * maxDecel).		// The distance the burn will require
 lock idealThrottle to stopDist / trueRadar.			// Throttle required for perfect hoverslam
 lock impactTime to trueRadar / abs(ship:verticalspeed).		// Time until impact, used for landing gear
-set runMode to 1.
-set landTarget to latlng(-0.10266804865356,-74.575385655446).
 
-if ADDONS:TR:AVAILABLE {
-    if ADDONS:TR:HASIMPACT {
-        //PRINT ADDONS:TR:IMPACTPOS.
-    } else {
-        PRINT "Impact position is not available".
-        set runMode to 0.
-    }
-} else {
-    PRINT "Trajectories is not available.".
-    set runMode to 0.
+set vabHelipad to latlng(-0.0968033160074459,-74.6186867121389).
+set launchpad to latlng(-0.0971945382219646,-74.557660817427).
+
+set landTarget to launchpad.
+
+set steeringManager:maxstoppingtime to 7.
+set steeringManager:pitchpid:kd to 1.25.
+set steeringManager:yawpid:kd to 1.25.
+
+set runMode to 0.
+
+wait until ag9.
+set startTime to time:seconds.
+
+set runMode to 1.
+
+set impactProvider to "tr". //tr is for trajectories, gr can be used for geoposition but doesn't really matter
+
+function impactPos {
+    if(impactProvider = "tr") return addons:tr:impactpos.
+    else return ship:geoPosition.
 }
 
-lock impactPos to addons:tr:impactpos.
-lock lat1 to impactPos:lat.
-lock long1 to impactPos:lng.
-lock lat2 to landTarget:lat.
-lock long2 to landTarget:lng.
 
-lock distTarget to sqrt((lat1-lat2)^2+(long1-long2)^2).
+set pidLat to PIDLOOP(15, 0, 5, -1, 1).
+set pidLng to PIDLOOP(15, 0, 5, -1, 1).
+set pidLat:setpoint to landTarget:lat.
+set pidLng:setpoint to landTarget:lng.
 
-//PID Stuff
-lock latError to 0 - (impactPos:LAT - landTarget:LAT).
-lock lngError to 0 - (impactPos:LNG - landTarget:LNG).
-
-lock latErrorPow to 0 - (impactPos:LAT - landTarget:LAT).
-lock lngErrorPow to 0 - (impactPos:LNG - landTarget:LNG).
-
-
-set pidLat to PIDLOOP(2, 1, 5, -1, 1).
-set pidLng to PIDLOOP(3, 1, 8, -1, 1).
-set pidLat:SETPOINT to 0.
-set pidLng:SETPOINT to 0.
-
-//wait until ETA:APOAPSIS < 15.
+set boostbackPidLat to PIDLOOP(1.5, 0, 0, -1, 1).
+set boostbackPidLat:setpoint to landTarget:lat. 
 
 rcs on.
 sas off.
 
 set thrott to 0.
-set steer to srfprograde.
+set steer to up.
 
 lock steering to steer.
 lock throttle to thrott.
 
+set pred to r(0, 0, 0).
+
+log "time,runMode,latErr,lngErr,latPidOut,lngPidOut" to "telem.csv".
+
+set entryBurn to true.
 
 until runMode = 0{
+
     if runMode = 1{
-        set steer to up + r(0, 65, 180).
-        wait 25.
-        set runMode to 2.
+        set tgt to up + r(0, 75, 180).
+        set steer to tgt.
+        if vang(ship:facing:forevector, tgt:forevector) < 5{
+            set runMode to 2.
+        }
     }
-    if runMode = 2{
+    else if runMode = 2{
         //Boostback
-        set thrott to 0.8.
-        if long1 < long2 - 0.05{
+        set pred to r(boostbackPidLat:update(time:seconds, impactPos():lat) * -2.5, 75, 180).
+        set steer to up + pred.
+        
+        set thrott to 1.0.
+        if impactPos():lng < landTarget:lng{
             set runMode to 3.
-            //unlock steering.
             set thrott to 0.
         }
     }
     else if runMode = 3{
-        set steer to up.
+        if ship:verticalspeed < 0{
+            set steer to srfRetrograde.
+        }
+        else{
+            set steer to up.
+        }
+
         set thrott to 0.
-        if trueRadar < 40000{
+        if trueRadar < 50000{
             set runMode to 4.
+            brakes on.
         }
     }
     else if runMode = 4{
         //Coasting with guidance
-        brakes on.
-        set pred to r(pidLat:update(time:seconds, latError)*-45, pidLng:update(time:seconds, lngError)*-45, 180).
-        //set pred to r(0, pidLng:update(time:seconds, lngError)*-45, 180).
-        set steer to up + pred.
-        print (pred) at (10, 6).
-        if (trueRadar < stopDist) and (alt:radar < 6000){
+        set pred to r(pidLat:update(time:seconds, impactPos():lat)*45, pidLng:update(time:seconds, impactPos():lng)*45, 180).
+        set steer to srfRetrograde + pred.
+        // if (impactProvider <> "gr") and (ship:altitude < 8000){
+        //     set impactProvider to "gr".
+        // }
+
+        if ship:verticalspeed < -900{
+            set entryBurn to true.
+        }
+        if ship:verticalspeed > -800 and entryBurn{
+            set entryBurn to false.
+        }
+
+        if entryBurn{
+            set thrott to 1.0.
+        }
+        else{
+            set thrott to 0.0.
+        }
+
+        if (trueRadar < stopDist) and (ship:altitude < 3000){
             set runMode to 5.
+            //steeringManager:resettodefault().
+            set pidLat:kp to 30.
+            set pidLng:kp to 30.
+            set pidLat:kd to 7.5.
+            set pidLng:kd to 7.5.
         }
     }
     else if runMode = 5{
         //final landing
-        set impactpos to landtarget.
         set thrott to idealThrottle.
-        set pred to r(pidLat:update(time:seconds, latError)*-45, pidLng:update(time:seconds, lngError)*-45, 180).
-        set steer to up + pred.
-        print pred at (10, 6).
-        if ship:verticalspeed > -200{
+        set pred to r(pidLat:update(time:seconds, impactPos():lat)*45, pidLng:update(time:seconds, impactPos():lng)*45, 180).
+        set steer to srfRetrograde + pred.
+        if ship:verticalspeed > -250{
             set runMode to 6.
+            set impactProvider to "gr".
         }
     }
     else if runMode = 6{
         //final landing
-        set impactpos to landtarget.
         set thrott to idealThrottle.
-        set pred to r(pidLat:update(time:seconds, latError)*30, pidLng:update(time:seconds, lngError)*30, 180).
-        set steer to srfretrograde.
+        set pred to r(pidLat:update(time:seconds, impactPos():lat)*-90, pidLng:update(time:seconds, impactPos():lng)*-90, 180).
+        set steer to srfRetrograde + pred.
+        if ship:verticalspeed > -100{
+            set runMode to 7.
+            set pred to r(0, 0, 0).
+        }
+    }
+    else if runMode = 7{
+        //final landing
+        set thrott to idealThrottle.
+        set steer to srfRetrograde.
         if ship:verticalspeed > -0.05{
             set thrott to 0.
             //unlock steering.
@@ -114,8 +153,14 @@ until runMode = 0{
             gear on.
         }
     }
-    print (trueRadar - stopDist) at (10, 4).
-    print (distTarget) at (10, 5).
+    print ("Run mode: " + runMode + "             ") at (0, 1).
+    print ("Lat err: " + pidLat:error + "             ") at (0, 2).
+    print ("Lng err: " + pidLng:error + "             ") at (0, 3).
+    print ("Pred: " + pred + "              ") at (0, 4).
+    print("Vertical Speed: " + ship:verticalspeed + "              ") at (0, 5).
+    if runMode > 3 and runMode < 7{
+        log (time:seconds - startTime) + "," + runMode + "," + pidLat:error + "," + pidLng:error + "," + pidLat:output + "," + pidLng:output to "telem.csv".
+    }
 }
 unlock all.
 sas on.
